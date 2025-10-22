@@ -1,0 +1,106 @@
+{
+  "Стальной панельный радиатор  K-Profil с боковым подключением Ру=10 бар 11\\500\\400": {
+    "meteor_art": "7724602504",
+    "meteor_name": "Радиатор METEOR Classic K-Profil 11/500/400",
+    "connection": "K-боковое",
+    "rad_type": "11",
+    "height": "500",
+    "length": "400"
+  },
+  "Стальной панельный радиатор K-Profil с боковым подключением Ру=10 бар 11\\500\\600": {
+    "meteor_art": "7724602506",
+    "meteor_name": "Радиатор METEOR Classic K-Profil 11/500/600",
+    "connection": "K-боковое",
+    "rad_type": "11",
+    "height": 500,
+    "length": 600,
+    "comment": "Выбрано вручную"
+  },
+  "Стальной панельный радиатор VK-Profil с нижним подключением,встроенным термостатическим вентилем Ру=10 бар 11\\300\\700": {
+    "meteor_art": "7724652307",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 11/300/700 ra",
+    "connection": "VK-правое",
+    "rad_type": "11",
+    "height": 300,
+    "length": 700,
+    "comment": "Выбрано вручную"
+  },
+  "Стальной панельный радиатор VK-Profil с нижним подключением,встроенным термостатическим вентилем Ру=10 бар 11\\500\\400": {
+    "meteor_art": "7724652504",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 11/500/400 ra",
+    "connection": "VK-правое",
+    "rad_type": "11",
+    "height": 500,
+    "length": 400,
+    "comment": "Выбрано вручную"
+  },
+  "Панельный стальной радиатор Valve Compact тип VС 22-500-400": {
+    "meteor_art": "7724655504",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 22/500/400 ra",
+    "connection": "VK-правое",
+    "rad_type": "22",
+    "height": 500,
+    "length": 400,
+    "comment": "Выбрано вручную"
+  },
+  "Радиатор стальной панельный 10-300-1000 VK": {
+    "meteor_art": "7724651310",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 10/300/1000 ra",
+    "connection": "VK-правое",
+    "rad_type": "10",
+    "height": 300,
+    "length": 1000,
+    "comment": "Выбрано вручную"
+  },
+  "Нижнее подключение VK 11-300-600 ra": {
+    "meteor_art": "7724652306",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 11/300/600 ra",
+    "connection": "VK-правое",
+    "rad_type": "11",
+    "height": 300,
+    "length": 600,
+    "comment": "Выбрано вручную"
+  },
+  "Нижнее подключение VK 11-500-700 ra": {
+    "meteor_art": "7724652507",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 11/500/700 ra",
+    "connection": "VK-правое",
+    "rad_type": "11",
+    "height": 500,
+    "length": 700,
+    "comment": "Выбрано вручную"
+  },
+  "VK 33/500/400": {
+    "meteor_art": "7724657504",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 33/500/400 ra",
+    "connection": "VK-правое",
+    "rad_type": "33",
+    "height": 500,
+    "length": 400,
+    "comment": "Выбрано вручную"
+  },
+  "Радиатор с нижним подключением высотой 300 мм со встроенным воздухоотводчиком Ventil Compact левое исполнение CVL 33-300-900 EVRA": {
+    "meteor_art": "7724667309",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 33/300/900 la",
+    "connection": "VK-левое",
+    "rad_type": "33",
+    "height": "300",
+    "length": "900"
+  },
+  "Радиатор с нижним подключением высотой 900 мм со встроенным воздухоотводчиком Ventil Compact левое исполнение CVL 33-900-500 EVRA": {
+    "meteor_art": "7724667905",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 33/900/500 la",
+    "connection": "VK-левое",
+    "rad_type": "33",
+    "height": "900",
+    "length": "500"
+  },
+  "Радиатор с нижним подключением с термостатическим вентилем высотой 300 мм со встроенным воздухоотводчиком Ventil Compact CVL 11-300-400 EVRA": {
+    "meteor_art": "7724662304",
+    "meteor_name": "Радиатор METEOR Classic VK-Profil 11/300/400 la",
+    "connection": "VK-левое",
+    "rad_type": "11",
+    "height": "300",
+    "length": "400"
+  }
+}
