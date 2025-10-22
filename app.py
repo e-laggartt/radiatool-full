@@ -1,638 +1,560 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import datetime
-import tempfile
 import io
+import tempfile
+import os
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side
 import base64
 
+# Настройка страницы
 st.set_page_config(
-    page_title="RadiaTool Web v2.0",
+    page_title="RadiaTool Web v1.9",
     page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Инициализация состояния сессии
-if 'selected_items' not in st.session_state:
-    st.session_state.selected_items = {}
-if 'spec_data' not in st.session_state:
-    st.session_state.spec_data = []
-if 'matrix_data' not in st.session_state:
-    st.session_state.matrix_data = []
-if 'sheets' not in st.session_state:
-    st.session_state.sheets = {}
-if 'brackets_df' not in st.session_state:
-    st.session_state.brackets_df = None
-
-@st.cache_data
-def load_data():
-    """Загрузка всех данных"""
-    try:
-        # Загрузка основной матрицы
-        matrix_path = "data/Матрица.xlsx"
-        sheets = pd.read_excel(matrix_path, sheet_name=None, engine='openpyxl')
-        
-        # Загрузка кронштейнов
-        brackets_path = "data/Кронштейны.xlsx"
-        brackets_df = pd.read_excel(brackets_path, engine='openpyxl')
-        brackets_df['Артикул'] = brackets_df['Артикул'].astype(str).str.strip()
-        
-        # Обработка данных матрицы
-        for sheet_name, data in sheets.items():
-            data['Артикул'] = data['Артикул'].astype(str).str.strip()
-            data['Вес, кг'] = pd.to_numeric(data['Вес, кг'], errors='coerce').fillna(0)
-            data['Объем, м3'] = pd.to_numeric(data['Объем, м3'], errors='coerce').fillna(0)
-            data['Цена, руб'] = pd.to_numeric(data['Цена, руб'], errors='coerce').fillna(0)
-            if 'Мощность, Вт' not in data.columns:
-                data['Мощность, Вт'] = ''
-        
-        return sheets, brackets_df
-        
-    except Exception as e:
-        st.error(f"Ошибка загрузки данных: {e}")
-        return {}, None
-
-def main():
-    st.title("🔧 RadiaTool Web v2.0")
-    st.markdown("---")
+class RadiatorWebApp:
+    def __init__(self):
+        self.sheets = {}
+        self.brackets_df = pd.DataFrame()
+        self.entry_values = {}
+        self.initialize_session_state()
+        self.load_data()
     
-    # Загрузка данных
-    if not st.session_state.sheets:
-        st.session_state.sheets, st.session_state.brackets_df = load_data()
+    def initialize_session_state(self):
+        """Инициализация состояния сессии"""
+        defaults = {
+            'connection_var': 'VK-правое',
+            'radiator_type_var': '10',
+            'bracket_var': 'Настенные кронштейны',
+            'radiator_discount': 0,
+            'bracket_discount': 0,
+            'show_tooltips': False,
+            'spec_data': None
+        }
+        
+        for key, value in defaults.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
     
-    # Боковая панель
-    with st.sidebar:
-        st.header("⚙️ Основные параметры")
+    def load_data(self):
+        """Загрузка данных из встроенных Excel файлов"""
+        try:
+            # Загрузка матрицы радиаторов
+            matrix_path = "data/Матрица.xlsx"
+            if os.path.exists(matrix_path):
+                self.sheets = pd.read_excel(matrix_path, sheet_name=None, engine='openpyxl')
+                
+                # Обработка кронштейнов
+                if "Кронштейны" in self.sheets:
+                    self.brackets_df = self.sheets["Кронштейны"].copy()
+                    self.brackets_df['Артикул'] = self.brackets_df['Артикул'].astype(str).str.strip()
+                    del self.sheets["Кронштейны"]
+                
+                # Обработка остальных листов
+                for sheet_name, data in self.sheets.items():
+                    data['Артикул'] = data['Артикул'].astype(str).str.strip()
+                    data['Вес, кг'] = pd.to_numeric(data['Вес, кг'], errors='coerce').fillna(0)
+                    data['Объем, м3'] = pd.to_numeric(data['Объем, м3'], errors='coerce').fillna(0)
+                    
+        except Exception as e:
+            st.error(f"Ошибка загрузки данных: {str(e)}")
+    
+    def create_interface(self):
+        """Создание веб-интерфейса"""
+        st.title("🔧 RadiaTool Web v1.9")
+        st.markdown("---")
         
-        # Выбор подключения
-        connection = st.selectbox(
-            "Тип подключения",
-            ["VK-правое", "VK-левое", "K-боковое"],
-            key="connection"
-        )
-        
-        # Динамический выбор типа радиатора
-        if connection == "VK-левое":
-            rad_types = ["10", "11", "30", "33"]
-        else:
-            rad_types = ["10", "11", "20", "21", "22", "30", "33"]
+        # Боковая панель - меню
+        with st.sidebar:
+            st.header("Меню")
             
-        rad_type = st.selectbox("Тип радиатора", rad_types, key="rad_type")
+            if st.button("🔄 Создать спецификацию METEOR"):
+                self.generate_spec("excel")
+            
+            if st.button("📊 Создать файл METEOR CSV"):
+                self.generate_spec("csv")
+            
+            st.markdown("---")
+            st.header("Загрузка данных")
+            
+            uploaded_file = st.file_uploader("Загрузить спецификацию", 
+                                           type=['xlsx', 'xls', 'csv'])
+            if uploaded_file:
+                self.handle_file_upload(uploaded_file)
+            
+            st.markdown("---")
+            st.header("Информация")
+            
+            if st.button("📖 Инструкция"):
+                self.show_instruction()
+            
+            if st.button("📄 Лицензионное соглашение"):
+                self.show_license()
         
-        # Тип крепления
-        bracket_type = st.selectbox(
-            "Тип крепления",
-            ["Настенные кронштейны", "Напольные кронштейны", "Без кронштейнов"],
-            key="bracket_type"
+        # Основная область - матрица радиаторов
+        self.create_matrix_interface()
+        
+        # Область спецификации
+        self.create_spec_preview()
+    
+    def create_matrix_interface(self):
+        """Создание интерфейса матрицы радиаторов"""
+        st.header("Матрица радиаторов")
+        
+        # Выбор параметров
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            connection = st.selectbox(
+                "Вид подключения",
+                ["VK-правое", "VK-левое", "K-боковое"],
+                index=0,
+                key="connection_var"
+            )
+        
+        with col2:
+            # Доступные типы радиаторов в зависимости от подключения
+            if st.session_state.connection_var == "VK-левое":
+                types = ["10", "11", "30", "33"]
+            else:
+                types = ["10", "11", "20", "21", "22", "30", "33"]
+            
+            radiator_type = st.selectbox(
+                "Тип радиатора",
+                types,
+                index=0,
+                key="radiator_type_var"
+            )
+        
+        with col3:
+            bracket_type = st.selectbox(
+                "Тип крепления",
+                ["Настенные кронштейны", "Напольные кронштейны", "Без кронштейнов"],
+                index=0,
+                key="bracket_var"
+            )
+        
+        # Скидки
+        col4, col5 = st.columns(2)
+        with col4:
+            st.session_state.radiator_discount = st.number_input(
+                "Скидка на радиаторы, %",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.5
+            )
+        
+        with col5:
+            st.session_state.bracket_discount = st.number_input(
+                "Скидка на кронштейны, %",
+                min_value=0.0,
+                max_value=100.0,
+                value=0.0,
+                step=0.5
+            )
+        
+        # Матрица радиаторов
+        self.display_radiator_matrix()
+    
+    def display_radiator_matrix(self):
+        """Отображение матрицы радиаторов"""
+        sheet_name = f"{st.session_state.connection_var} {st.session_state.radiator_type_var}"
+        
+        if sheet_name not in self.sheets:
+            st.error(f"Лист '{sheet_name}' не найден")
+            return
+        
+        data = self.sheets[sheet_name]
+        lengths = list(range(400, 2100, 100))
+        heights = [300, 400, 500, 600, 900]
+        
+        # Создание матрицы
+        st.subheader("Матрица выбора радиаторов")
+        st.markdown("**Высота радиаторов, мм →**")
+        
+        # Заголовки столбцов (высоты)
+        cols = st.columns(len(heights) + 1)
+        with cols[0]:
+            st.markdown("**Длина ↓**")
+        for j, h in enumerate(heights):
+            with cols[j + 1]:
+                st.markdown(f"**{h}**")
+        
+        # Строки матрицы
+        for i, length in enumerate(lengths):
+            cols = st.columns(len(heights) + 1)
+            
+            with cols[0]:
+                st.markdown(f"**{length}**")
+            
+            for j, height in enumerate(heights):
+                with cols[j + 1]:
+                    self.create_matrix_cell(sheet_name, data, length, height)
+    
+    def create_matrix_cell(self, sheet_name, data, length, height):
+        """Создание ячейки матрицы"""
+        pattern = f"/{height}/{length}"
+        match = data[data['Наименование'].str.contains(pattern, na=False)]
+        
+        if not match.empty:
+            product = match.iloc[0]
+            art = str(product['Артикул']).strip()
+            
+            # Получение текущего значения
+            current_value = self.entry_values.get((sheet_name, art), "")
+            
+            # Поле ввода
+            new_value = st.text_input(
+                "",
+                value=current_value,
+                key=f"{sheet_name}_{art}",
+                label_visibility="collapsed",
+                placeholder="0"
+            )
+            
+            # Сохранение значения
+            if new_value != current_value:
+                if new_value.strip():
+                    self.entry_values[(sheet_name, art)] = new_value
+                else:
+                    self.entry_values.pop((sheet_name, art), None)
+            
+            # Подсказка при наведении
+            if st.session_state.show_tooltips and st.session_state.get(f"hover_{sheet_name}_{art}"):
+                power = product.get('Мощность, Вт', '')
+                weight = product.get('Вес, кг', '')
+                volume = product.get('Объем, м3', '')
+                
+                st.caption(f"Арт: {art}")
+                st.caption(f"Мощность: {power} Вт")
+                st.caption(f"Вес: {weight} кг")
+    
+    def create_spec_preview(self):
+        """Создание предпросмотра спецификации"""
+        st.header("Предпросмотр спецификации")
+        
+        if st.button("🔄 Обновить спецификацию"):
+            spec_data = self.prepare_spec_data()
+            if spec_data is not None:
+                st.session_state.spec_data = spec_data
+        
+        if st.session_state.spec_data is not None:
+            self.display_spec_table(st.session_state.spec_data)
+            
+            # Кнопки экспорта
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("💾 Экспорт в Excel"):
+                    self.download_excel(st.session_state.spec_data)
+            with col2:
+                if st.button("📄 Экспорт в CSV"):
+                    self.download_csv(st.session_state.spec_data)
+    
+    def display_spec_table(self, spec_data):
+        """Отображение таблицы спецификации"""
+        # Форматирование данных для отображения
+        display_data = spec_data.copy()
+        display_data['Цена, руб (с НДС)'] = display_data['Цена, руб (с НДС)'].round(2)
+        display_data['Цена со скидкой, руб (с НДС)'] = display_data['Цена со скидкой, руб (с НДС)'].round(2)
+        display_data['Сумма, руб (с НДС)'] = display_data['Сумма, руб (с НДС)'].round(2)
+        
+        st.dataframe(
+            display_data,
+            use_container_width=True,
+            hide_index=True
         )
         
-        st.header("💰 Скидки")
-        col1, col2 = st.columns(2)
-        with col1:
-            radiator_discount = st.number_input(
-                "Радиаторы, %", 
-                min_value=0.0, max_value=100.0, value=0.0, step=0.1,
-                key="radiator_discount"
-            )
-        with col2:
-            bracket_discount = st.number_input(
-                "Кронштейны, %", 
-                min_value=0.0, max_value=100.0, value=0.0, step=0.1,
-                key="bracket_discount"
-            )
+        # Итоги
+        total_sum = spec_data["Сумма, руб (с НДС)"].sum()
+        total_qty_radiators = sum(spec_data.query("Наименование.str.contains('Радиатор')")["Кол-во"])
+        total_qty_brackets = sum(spec_data.query("Наименование.str.contains('Кронштейн')")["Кол-во"])
         
-        st.header("🔧 Действия")
-        if st.button("🔄 Полный сброс", use_container_width=True):
-            reset_all()
-        
-        if st.button("📊 Обновить матрицу", use_container_width=True):
-            update_matrix_data(connection, rad_type)
+        st.markdown(f"**Итого:** Количество: {total_qty_radiators} / {total_qty_brackets} | Сумма: {total_sum:.2f} руб")
     
-    # Основной контент
-    tab1, tab2, tab3 = st.tabs(["📊 Матрица радиаторов", "📋 Спецификация", "⚙️ Дополнительно"])
-    
-    with tab1:
-        display_matrix_interface(connection, rad_type)
-    
-    with tab2:
-        display_specification_interface(radiator_discount, bracket_discount, bracket_type)
-    
-    with tab3:
-        display_additional_tools()
+    def prepare_spec_data(self):
+        """Подготовка данных для спецификации (аналогично десктопной версии)"""
+        try:
+            spec_data = []
+            radiator_data = []
+            bracket_data = []
+            brackets_temp = {}
 
-def update_matrix_data(connection, rad_type):
-    """Обновление данных матрицы"""
-    sheet_name = f"{connection} {rad_type}"
-    if sheet_name in st.session_state.sheets:
-        data = st.session_state.sheets[sheet_name]
-        matrix_data = []
-        
-        for _, row in data.iterrows():
-            try:
-                name = str(row['Наименование'])
-                name_parts = name.split('/')
-                
-                if len(name_parts) >= 3:
-                    height_str = name_parts[-2].replace('мм', '').strip()
-                    length_str = name_parts[-1].replace('мм', '').strip().split()[0]
+            # Обработка радиаторов
+            for (sheet_name, art), value in self.entry_values.items():
+                if value and sheet_name in self.sheets:
+                    qty_radiator = self.parse_quantity(value)
+                    mask = self.sheets[sheet_name]['Артикул'] == art
+                    product = self.sheets[sheet_name].loc[mask]
                     
-                    height = int(height_str) if height_str.isdigit() else 0
-                    length = int(length_str) if length_str.isdigit() else 0
+                    if product.empty:
+                        continue
                     
-                    matrix_data.append({
-                        'articul': str(row['Артикул']).strip(),
-                        'name': name,
-                        'height': height,
-                        'length': length,
-                        'power': str(row.get('Мощность, Вт', '')),
-                        'weight': float(row['Вес, кг']),
-                        'volume': float(row['Объем, м3']),
-                        'price': float(row.get('Цена, руб', 0))
-                    })
-            except Exception as e:
-                continue
-        
-        st.session_state.matrix_data = matrix_data
-        st.success("Матрица обновлена!")
-    else:
-        st.error(f"Лист '{sheet_name}' не найден")
-
-def display_matrix_interface(connection, rad_type):
-    """Отображение интерфейса матрицы"""
-    
-    if not st.session_state.matrix_data:
-        update_matrix_data(connection, rad_type)
-    
-    st.header("Матрица радиаторов")
-    
-    # Фильтры
-    col1, col2 = st.columns(2)
-    with col1:
-        min_height = st.number_input("Минимальная высота", value=300, step=100)
-    with col2:
-        max_height = st.number_input("Максимальная высота", value=900, step=100)
-    
-    # Фильтрация данных
-    filtered_data = [item for item in st.session_state.matrix_data 
-                    if min_height <= item['height'] <= max_height]
-    
-    if not filtered_data:
-        st.warning("Нет данных для отображения")
-        return
-    
-    # Создание матрицы
-    heights = sorted(list(set(item['height'] for item in filtered_data)))
-    lengths = sorted(list(set(item['length'] for item in filtered_data)))
-    
-    # Создаем сетку для ввода
-    st.subheader("Введите количество радиаторов:")
-    
-    # Заголовок матрицы
-    cols = st.columns(len(heights) + 1)
-    with cols[0]:
-        st.markdown("**Длина/Высота**")
-    for i, height in enumerate(heights):
-        with cols[i + 1]:
-            st.markdown(f"**{height} мм**")
-    
-    # Строки матрицы
-    for length in lengths:
-        cols = st.columns(len(heights) + 1)
-        
-        with cols[0]:
-            st.markdown(f"**{length} мм**")
-        
-        for i, height in enumerate(heights):
-            with cols[i + 1]:
-                item = next((x for x in filtered_data if x['length'] == length and x['height'] == height), None)
-                if item:
-                    current_qty = st.session_state.selected_items.get(item['articul'], 0)
-                    new_qty = st.number_input(
-                        "",
-                        min_value=0,
-                        value=current_qty,
-                        key=f"matrix_{item['articul']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    if new_qty != current_qty:
-                        st.session_state.selected_items[item['articul']] = new_qty
-                        
-                    # Подсказка при наведении
-                    with st.expander("", expanded=False):
-                        st.caption(f"Арт: {item['articul']}")
-                        st.caption(f"Мощность: {item['power']} Вт")
-                        st.caption(f"Вес: {item['weight']} кг")
-                        st.caption(f"Объем: {item['volume']} м³")
-                        st.caption(f"Цена: {item['price']} руб")
-                else:
-                    st.markdown("—")
-    
-    # Статистика
-    total_selected = sum(st.session_state.selected_items.values())
-    st.info(f"🎯 Выбрано радиаторов: {total_selected} шт")
-
-def display_specification_interface(radiator_discount, bracket_discount, bracket_type):
-    """Отображение интерфейса спецификации"""
-    
-    st.header("Спецификация")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("🔄 Рассчитать спецификацию", use_container_width=True):
-            calculate_specification(radiator_discount, bracket_discount, bracket_type)
-    with col2:
-        if st.button("💾 Экспорт в Excel", use_container_width=True):
-            export_to_excel(radiator_discount, bracket_discount, bracket_type)
-    with col3:
-        if st.button("📋 Копировать артикулы", use_container_width=True):
-            copy_articuls()
-    
-    # Отображение спецификации
-    if st.session_state.spec_data:
-        display_specification_table()
-        
-        # Итоговая информация
-        display_totals()
-    else:
-        st.info("Рассчитайте спецификацию для отображения данных")
-
-def calculate_specification(radiator_discount, bracket_discount, bracket_type):
-    """Расчет полной спецификации"""
-    
-    try:
-        spec_data = []
-        
-        # Обрабатываем радиаторы
-        for articul, qty in st.session_state.selected_items.items():
-            if qty <= 0:
-                continue
-                
-            # Ищем товар в данных
-            for sheet_name, data in st.session_state.sheets.items():
-                product = data[data['Артикул'].str.strip() == articul]
-                if not product.empty:
                     product = product.iloc[0]
-                    price = float(product.get('Цена, руб', 0))
-                    discounted_price = round(price * (1 - radiator_discount / 100), 2)
-                    total = round(discounted_price * qty, 2)
+                    price = float(product['Цена, руб'])
+                    discount = st.session_state.radiator_discount
+                    discounted_price = round(price * (1 - discount / 100), 2)
+                    total = round(discounted_price * qty_radiator, 2)
                     
-                    spec_data.append({
-                        "№": len(spec_data) + 1,
-                        "Артикул": articul,
-                        "Наименование": product['Наименование'],
-                        "Мощность, Вт": product.get('Мощность, Вт', ''),
-                        "Цена, руб (с НДС)": price,
-                        "Скидка, %": radiator_discount,
-                        "Цена со скидкой, руб (с НДС)": discounted_price,
-                        "Кол-во": qty,
-                        "Сумма, руб (с НДС)": total,
-                        "Тип": "Радиатор"
+                    radiator_data.append({
+                        "№": len(radiator_data) + 1,
+                        "Артикул": str(product['Артикул']).strip(),
+                        "Наименование": str(product['Наименование']),
+                        "Мощность, Вт": float(product.get('Мощность, Вт', 0)),
+                        "Цена, руб (с НДС)": float(price),
+                        "Скидка, %": float(discount),
+                        "Цена со скидкой, руб (с НДС)": float(discounted_price),
+                        "Кол-во": int(qty_radiator),
+                        "Сумма, руб (с НДС)": float(total)
                     })
-                    break
-        
-        # Добавляем кронштейны
-        if bracket_type != "Без кронштейнов" and st.session_state.brackets_df is not None:
-            brackets = calculate_brackets(bracket_type, bracket_discount)
-            spec_data.extend(brackets)
-        
-        st.session_state.spec_data = spec_data
-        st.success(f"Спецификация рассчитана: {len(spec_data)} позиций")
-        
-    except Exception as e:
-        st.error(f"Ошибка расчета: {e}")
 
-def calculate_brackets(bracket_type, bracket_discount):
-    """Расчет кронштейнов"""
-    brackets = []
+                    # Обработка кронштейнов
+                    if st.session_state.bracket_var != "Без кронштейнов":
+                        # Упрощенный расчет кронштейнов
+                        brackets = self.calculate_brackets_simple(
+                            str(product['Наименование']),
+                            qty_radiator
+                        )
+                        
+                        for art_bracket, qty_bracket in brackets:
+                            mask_bracket = self.brackets_df['Артикул'] == art_bracket
+                            bracket_info = self.brackets_df.loc[mask_bracket]
+                            
+                            if bracket_info.empty:
+                                continue
+                                
+                            key = art_bracket.strip()
+                            if key not in brackets_temp:
+                                price_bracket = float(bracket_info.iloc[0]['Цена, руб'])
+                                discount_bracket = st.session_state.bracket_discount
+                                discounted_price_bracket = round(price_bracket * (1 - discount_bracket / 100), 2)
+                                
+                                brackets_temp[key] = {
+                                    "Артикул": art_bracket,
+                                    "Наименование": str(bracket_info.iloc[0]['Наименование']),
+                                    "Цена, руб (с НДС)": float(price_bracket),
+                                    "Скидка, %": float(discount_bracket),
+                                    "Цена со скидкой, руб (с НДС)": float(discounted_price_bracket),
+                                    "Кол-во": 0,
+                                    "Сумма, руб (с НДС)": 0.0
+                                }
+                            
+                            brackets_temp[key]["Кол-во"] += int(qty_bracket)
+                            brackets_temp[key]["Сумма, руб (с НДС)"] += round(
+                                brackets_temp[key]["Цена со скидкой, руб (с НДС)"] * qty_bracket, 2
+                            )
+
+            # Формирование данных кронштейнов
+            for b in brackets_temp.values():
+                bracket_data.append({
+                    "№": len(radiator_data) + len(bracket_data) + 1,
+                    "Артикул": str(b["Артикул"]),
+                    "Наименование": str(b["Наименование"]),
+                    "Мощность, Вт": 0.0,
+                    "Цена, руб (с НДС)": float(b["Цена, руб (с НДС)"]),
+                    "Скидка, %": float(b["Скидка, %"]),
+                    "Цена со скидкой, руб (с НДС)": float(b["Цена со скидкой, руб (с НДС)"]),
+                    "Кол-во": int(b["Кол-во"]),
+                    "Сумма, руб (с НДС)": float(b["Сумма, руб (с НДС)"])
+                })
+
+            # Объединение данных
+            combined_data = radiator_data + bracket_data
+            
+            if not combined_data:
+                st.warning("Нет данных для формирования спецификации")
+                return None
+
+            # Создание DataFrame
+            df = pd.DataFrame(
+                combined_data,
+                columns=[
+                    "№", "Артикул", "Наименование", "Мощность, Вт",
+                    "Цена, руб (с НДС)", "Скидка, %",
+                    "Цена со скидкой, руб (с НДС)", "Кол-во",
+                    "Сумма, руб (с НДС)"
+                ]
+            )
+            
+            return df
+            
+        except Exception as e:
+            st.error(f"Ошибка подготовки спецификации: {str(e)}")
+            return None
     
-    if not st.session_state.selected_items:
+    def calculate_brackets_simple(self, radiator_name, qty_radiator):
+        """Упрощенный расчет кронштейнов"""
+        brackets = []
+        
+        if "тип 10" in radiator_name or "тип 11" in radiator_name:
+            brackets.append(("К9.2L", 2 * qty_radiator))
+            brackets.append(("К9.2R", 2 * qty_radiator))
+        elif "тип 20" in radiator_name or "тип 21" in radiator_name or "тип 22" in radiator_name:
+            brackets.append(("К15.4500", 2 * qty_radiator))
+        elif "тип 30" in radiator_name or "тип 33" in radiator_name:
+            brackets.append(("К15.4500", 3 * qty_radiator))
+        
         return brackets
     
-    # Упрощенный расчет кронштейнов
-    bracket_counts = {}
-    
-    for articul, qty in st.session_state.selected_items.items():
-        if qty <= 0:
-            continue
+    def parse_quantity(self, value):
+        """Парсинг количества (аналогично десктопной версии)"""
+        try:
+            if not value:
+                return 0
             
-        # Находим параметры радиатора
-        for sheet_name, data in st.session_state.sheets.items():
-            product = data[data['Артикул'].str.strip() == articul]
-            if not product.empty:
-                product = product.iloc[0]
-                name = product['Наименование']
-                
-                try:
-                    name_parts = name.split('/')
-                    if len(name_parts) >= 3:
-                        height = int(name_parts[-2].replace('мм', '').strip())
-                        length = int(name_parts[-1].replace('мм', '').strip().split()[0])
-                        rad_type = sheet_name.split()[-1]
-                        
-                        # Расчет кронштейнов по типу
-                        if bracket_type == "Настенные кронштейны":
-                            if rad_type in ["10", "11"]:
-                                bracket_counts["К9.2L"] = bracket_counts.get("К9.2L", 0) + 2 * qty
-                                bracket_counts["К9.2R"] = bracket_counts.get("К9.2R", 0) + 2 * qty
-                                if 1700 <= length <= 2000:
-                                    bracket_counts["К9.3-40"] = bracket_counts.get("К9.3-40", 0) + 1 * qty
-                            elif rad_type in ["20", "21", "22", "30", "33"]:
-                                art_map = {300: "К15.4300", 400: "К15.4400", 500: "К15.4500", 
-                                          600: "К15.4600", 900: "К15.4900"}
-                                if height in art_map:
-                                    art = art_map[height]
-                                    if 400 <= length <= 1600:
-                                        bracket_counts[art] = bracket_counts.get(art, 0) + 2 * qty
-                                    elif 1700 <= length <= 2000:
-                                        bracket_counts[art] = bracket_counts.get(art, 0) + 3 * qty
-                        
-                        elif bracket_type == "Напольные кронштейны":
-                            # Аналогичная логика для напольных кронштейнов
-                            if rad_type in ["10", "11"]:
-                                if 300 <= height <= 400:
-                                    main_art = "КНС450"
-                                elif 500 <= height <= 600:
-                                    main_art = "КНС470"
-                                elif height == 900:
-                                    main_art = "КНС4100"
-                                else:
-                                    main_art = None
-                                
-                                if main_art:
-                                    bracket_counts[main_art] = bracket_counts.get(main_art, 0) + 2 * qty
-                                    if 1700 <= length <= 2000:
-                                        bracket_counts["КНС430"] = bracket_counts.get("КНС430", 0) + 1 * qty
-                            
-                            # ... остальные типы кронштейнов
-                                
-                except Exception as e:
-                    continue
-                break
-    
-    # Формируем записи кронштейнов
-    for bracket_art, total_qty in bracket_counts.items():
-        if total_qty > 0:
-            bracket_info = st.session_state.brackets_df[
-                st.session_state.brackets_df['Артикул'] == bracket_art
-            ]
-            if not bracket_info.empty:
-                bracket_info = bracket_info.iloc[0]
-                price = float(bracket_info.get('Цена, руб', 0))
-                discounted_price = round(price * (1 - bracket_discount / 100), 2)
-                total = round(discounted_price * total_qty, 2)
-                
-                brackets.append({
-                    "№": len(brackets) + 1,
-                    "Артикул": bracket_art,
-                    "Наименование": bracket_info['Наименование'],
-                    "Мощность, Вт": '',
-                    "Цена, руб (с НДС)": price,
-                    "Скидка, %": bracket_discount,
-                    "Цена со скидкой, руб (с НДС)": discounted_price,
-                    "Кол-во": total_qty,
-                    "Сумма, руб (с НДС)": total,
-                    "Тип": "Кронштейн"
-                })
-    
-    return brackets
-
-def display_specification_table():
-    """Отображение таблицы спецификации"""
-    
-    df = pd.DataFrame(st.session_state.spec_data)
-    
-    # Форматируем числовые колонки
-    display_df = df.copy()
-    numeric_cols = ['Цена, руб (с НДС)', 'Цена со скидкой, руб (с НДС)', 'Сумма, руб (с НДС)']
-    for col in numeric_cols:
-        if col in display_df.columns:
-            display_df[col] = display_df[col].map(lambda x: f"{x:,.2f}" if pd.notna(x) else "")
-    
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "№": st.column_config.NumberColumn(width="small"),
-            "Артикул": st.column_config.TextColumn(width="medium"),
-            "Наименование": st.column_config.TextColumn(width="large"),
-            "Мощность, Вт": st.column_config.TextColumn(width="small"),
-            "Цена, руб (с НДС)": st.column_config.TextColumn(width="medium"),
-            "Скидка, %": st.column_config.NumberColumn(width="small"),
-            "Цена со скидкой, руб (с НДС)": st.column_config.TextColumn(width="medium"),
-            "Кол-во": st.column_config.NumberColumn(width="small"),
-            "Сумма, руб (с НДС)": st.column_config.TextColumn(width="medium"),
-        }
-    )
-
-def display_totals():
-    """Отображение итоговой информации"""
-    
-    if not st.session_state.spec_data:
-        return
-    
-    spec_df = pd.DataFrame(st.session_state.spec_data)
-    
-    # Расчет итогов
-    total_sum = spec_df['Сумма, руб (с НДС)'].sum()
-    total_qty_radiators = spec_df[spec_df['Тип'] == 'Радиатор']['Кол-во'].sum()
-    total_qty_brackets = spec_df[spec_df['Тип'] == 'Кронштейн']['Кол-во'].sum()
-    
-    # Расчет веса и объема
-    total_weight = 0
-    total_volume = 0
-    for item in st.session_state.spec_data:
-        if item['Тип'] == 'Радиатор':
-            articul = item['Артикул']
-            qty = item['Кол-во']
+            if isinstance(value, (int, float)):
+                return int(round(float(value)))
             
-            for sheet_name, data in st.session_state.sheets.items():
-                product = data[data['Артикул'].str.strip() == articul]
-                if not product.empty:
-                    total_weight += float(product.iloc[0]['Вес, кг']) * qty
-                    total_volume += float(product.iloc[0]['Объем, м3']) * qty
-                    break
-    
-    # Отображение в колонках
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Общая сумма", f"{total_sum:,.2f} руб")
-    
-    with col2:
-        st.metric("Радиаторы / Кронштейны", f"{total_qty_radiators} / {total_qty_brackets}")
-    
-    with col3:
-        st.metric("Общий вес", f"{total_weight:.1f} кг")
-    
-    with col4:
-        st.metric("Общий объем", f"{total_volume:.3f} м³")
-
-def export_to_excel(radiator_discount, bracket_discount, bracket_type):
-    """Экспорт в Excel"""
-    
-    if not st.session_state.spec_data:
-        st.warning("Нет данных для экспорта")
-        return
-    
-    try:
-        # Создаем Excel файл
-        output = io.BytesIO()
-        
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Основная спецификация
-            spec_df = pd.DataFrame(st.session_state.spec_data)
-            spec_df.to_excel(writer, sheet_name='Спецификация', index=False)
+            value = str(value).strip()
             
-            # Настройка ширины колонок
-            worksheet = writer.sheets['Спецификация']
-            column_widths = {'A': 8, 'B': 15, 'C': 60, 'D': 12, 'E': 15, 
-                           'F': 10, 'G': 20, 'H': 10, 'I': 15}
-            for col, width in column_widths.items():
-                worksheet.column_dimensions[col].width = width
-        
-        excel_data = output.getvalue()
-        
-        # Кнопка скачивания
-        st.download_button(
-            label="📥 Скачать Excel файл",
-            data=excel_data,
-            file_name=f"Расчет_стоимости_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-        
-    except Exception as e:
-        st.error(f"Ошибка экспорта: {e}")
-
-def copy_articuls():
-    """Копирование артикулов в буфер"""
-    
-    if not st.session_state.spec_data:
-        st.warning("Нет данных для копирования")
-        return
-    
-    articuls = [item['Артикул'] for item in st.session_state.spec_data if item['Тип'] == 'Радиатор']
-    articuls_text = '\n'.join(articuls)
-    
-    # В Streamlit нет прямого доступа к буферу, поэтому предлагаем скачать текстовый файл
-    st.download_button(
-        label="📋 Скачать артикулы (TXT)",
-        data=articuls_text,
-        file_name="артикулы.txt",
-        mime="text/plain",
-        use_container_width=True
-    )
-
-def display_additional_tools():
-    """Дополнительные инструменты"""
-    
-    st.header("Дополнительные функции")
-    
-    tab1, tab2, tab3 = st.tabs(["Импорт данных", "Информация", "Настройки"])
-    
-    with tab1:
-        st.subheader("Импорт из Excel/CSV")
-        
-        uploaded_file = st.file_uploader("Загрузите файл спецификации", 
-                                       type=['xlsx', 'xls', 'csv'])
-        
-        if uploaded_file is not None:
-            try:
-                if uploaded_file.name.endswith('.csv'):
-                    df = pd.read_csv(uploaded_file, sep=';')
-                else:
-                    df = pd.read_excel(uploaded_file, engine='openpyxl')
-                
-                st.success(f"Файл загружен: {len(df)} строк")
-                
-                # Показываем предпросмотр
-                st.subheader("Предпросмотр данных")
-                st.dataframe(df.head(10), use_container_width=True)
-                
-                # Автоматическое определение столбцов
-                art_col = None
-                qty_col = None
-                
-                for col in df.columns:
-                    col_lower = str(col).lower()
-                    if any(x in col_lower for x in ['артикул', 'art', 'код']):
-                        art_col = col
-                    elif any(x in col_lower for x in ['кол-во', 'количество', 'qty']):
-                        qty_col = col
-                
-                if art_col and qty_col:
-                    st.info(f"Автоопределение: Артикул - {art_col}, Количество - {qty_col}")
+            # Удаление лишних '+'
+            while value.startswith('+'):
+                value = value[1:]
+            while value.endswith('+'):
+                value = value[:-1]
+            
+            if not value:
+                return 0
+            
+            # Суммирование частей
+            parts = value.split('+')
+            total = 0
+            for part in parts:
+                part = part.strip()
+                if part:
+                    total += int(round(float(part)))
                     
-                    if st.button("Импортировать данные"):
-                        import_data(df, art_col, qty_col)
-                else:
-                    st.warning("Не удалось автоматически определить столбцы")
-                
-            except Exception as e:
-                st.error(f"Ошибка загрузки файла: {e}")
+            return total
+        except:
+            return 0
     
-    with tab2:
-        st.subheader("Справка и информация")
+    def download_excel(self, spec_data):
+        """Скачивание Excel файла"""
+        try:
+            output = io.BytesIO()
+            
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                spec_data.to_excel(writer, sheet_name='Спецификация', index=False)
+                
+                # Форматирование
+                workbook = writer.book
+                worksheet = writer.sheets['Спецификация']
+                
+                # Заголовки
+                for cell in worksheet[1]:
+                    cell.font = Font(bold=True)
+                    cell.alignment = Alignment(horizontal='center')
+            
+            output.seek(0)
+            
+            st.download_button(
+                label="📥 Скачать Excel файл",
+                data=output,
+                file_name="Спецификация_радиаторов.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            
+        except Exception as e:
+            st.error(f"Ошибка создания Excel: {str(e)}")
+    
+    def download_csv(self, spec_data):
+        """Скачивание CSV файла"""
+        try:
+            csv_data = spec_data[['Артикул', 'Кол-во']].to_csv(index=False, sep=';')
+            
+            st.download_button(
+                label="📥 Скачать CSV файл",
+                data=csv_data,
+                file_name="спецификация.csv",
+                mime="text/csv"
+            )
+            
+        except Exception as e:
+            st.error(f"Ошибка создания CSV: {str(e)}")
+    
+    def handle_file_upload(self, uploaded_file):
+        """Обработка загруженного файла"""
+        try:
+            if uploaded_file.name.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+            elif uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file, sep=';')
+            else:
+                st.error("Неподдерживаемый формат файла")
+                return
+            
+            # Автоопределение столбцов
+            art_col = None
+            qty_col = None
+            
+            for col in df.columns:
+                col_lower = str(col).lower()
+                if 'артикул' in col_lower or 'art' in col_lower:
+                    art_col = col
+                elif 'кол-во' in col_lower or 'количество' in col_lower:
+                    qty_col = col
+            
+            if art_col is None:
+                art_col = df.columns[0]
+            if qty_col is None and len(df.columns) > 1:
+                qty_col = df.columns[1]
+            
+            if qty_col is None:
+                st.error("Не найден столбец с количеством")
+                return
+            
+            # Обработка данных
+            loaded_count = 0
+            for _, row in df.iterrows():
+                art = str(row[art_col]).strip()
+                qty = self.parse_quantity(row[qty_col])
+                
+                if qty > 0 and art:
+                    # Поиск артикула в данных
+                    for sheet_name, sheet_data in self.sheets.items():
+                        if art in sheet_data['Артикул'].astype(str).str.strip().values:
+                            self.entry_values[(sheet_name, art)] = str(qty)
+                            loaded_count += 1
+                            break
+            
+            st.success(f"Загружено {loaded_count} позиций")
+            
+        except Exception as e:
+            st.error(f"Ошибка обработки файла: {str(e)}")
+    
+    def generate_spec(self, file_type):
+        """Генерация спецификации"""
+        spec_data = self.prepare_spec_data()
+        if spec_data is not None:
+            st.session_state.spec_data = spec_data
+            st.success("Спецификация сгенерирована!")
+    
+    def show_instruction(self):
+        """Показать инструкцию"""
+        st.info("""
+        **ИНСТРУКЦИЯ ПО ИСПОЛЬЗОВАНИЮ**
         
-        st.markdown("""
-        ### 📖 Инструкция по использованию
-        
-        1. **Выбор параметров** - в боковой панели выберите тип подключения, радиатора и крепления
-        2. **Заполнение матрицы** - введите количество радиаторов в соответствующих ячейках
-        3. **Расчет спецификации** - нажмите кнопку для расчета полной спецификации
-        4. **Экспорт** - скачайте результаты в Excel
-        
-        ### 🔧 Основные возможности
-        
-        - Подбор радиаторов по типоразмерам
-        - Автоматический расчет кронштейнов
-        - Учет скидок на радиаторы и кронштейны
-        - Экспорт в Excel и копирование артикулов
-        - Импорт данных из существующих спецификаций
+        1. Выберите параметры радиатора в верхней части
+        2. Заполните матрицу количествами
+        3. Нажмите "Обновить спецификацию"
+        4. Скачайте результат в нужном формате
         """)
     
-    with tab3:
-        st.subheader("Настройки")
+    def show_license(self):
+        """Показать лицензионное соглашение"""
+        st.info("""
+        **ЛИЦЕНЗИОННОЕ СОГЛАШЕНИЕ**
         
-        st.number_input("Размер матрицы (строк)", value=20, key="matrix_size")
-        st.checkbox("Показывать подсказки", value=True, key="show_tooltips")
-        st.checkbox("Авторасчет при изменении", value=True, key="auto_calculate")
+        Программное обеспечение предназначено для формирования спецификаций 
+        на радиаторы METEOR. Все права защищены.
+        """)
 
-def import_data(df, art_col, qty_col):
-    """Импорт данных из файла"""
-    
-    try:
-        imported_count = 0
-        
-        for _, row in df.iterrows():
-            art = str(row[art_col]).strip()
-            qty = int(float(row[qty_col])) if pd.notna(row[qty_col]) else 0
-            
-            if qty > 0 and art:
-                # Ищем артикул в данных
-                for sheet_name, data in st.session_state.sheets.items():
-                    if art in data['Артикул'].astype(str).str.strip().values:
-                        st.session_state.selected_items[art] = (
-                            st.session_state.selected_items.get(art, 0) + qty
-                        )
-                        imported_count += 1
-                        break
-        
-        st.success(f"Импортировано {imported_count} позиций")
-        st.rerun()
-        
-    except Exception as e:
-        st.error(f"Ошибка импорта: {e}")
-
-def reset_all():
-    """Полный сброс всех данных"""
-    st.session_state.selected_items = {}
-    st.session_state.spec_data = []
-    st.success("Все данные сброшены!")
-    st.rerun()
+def main():
+    app = RadiatorWebApp()
+    app.create_interface()
 
 if __name__ == "__main__":
     main()
