@@ -30,6 +30,8 @@ st.markdown("""
         border: none !important;
         font-family: "Segoe UI", sans-serif !important;
         font-size: 14px !important;
+        padding: 8px 16px !important;
+        margin: 0 !important;
     }
     .stButton > button:hover {
         background-color: #263168 !important;
@@ -69,7 +71,7 @@ st.markdown("""
         height: 24px;
         width: 55px;
         font-family: "Segoe UI", sans-serif;
-        font-size: 10px;
+        font-size: 12px;
     }
     .stNumberInput input {
         padding: 0 !important;
@@ -82,6 +84,26 @@ st.markdown("""
     .stFileUploader {
         padding: 0 !important;
         margin: 0 !important;
+    }
+    /* Убираем отступы между ячейками */
+    .stColumns > div {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    /* Стиль для верхних кнопок */
+    .top-button {
+        display: inline-block;
+        background-color: #955b67 !important;
+        color: white !important;
+        border: none !important;
+        font-family: "Segoe UI", sans-serif !important;
+        font-size: 14px !important;
+        padding: 8px 16px !important;
+        margin: 0 5px !important;
+        cursor: pointer;
+    }
+    .top-button:hover {
+        background-color: #263168 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -390,7 +412,6 @@ with col1:
             excel_data = save_excel_spec(df)
             st.download_button("📥 Скачать Excel", excel_data, "Расчёт стоимости.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 with col2:
-    # Заменяем drag-and-drop на выпадающее меню "Загрузить из"
     upload_option = st.selectbox("", ["Выберите действие", "Загрузить спецификацию METEOR", "Загрузить CSV", "Загрузить иной спецификации"], index=0)
     if upload_option == "Загрузить спецификацию METEOR":
         uploaded_file = st.file_uploader("Загрузить спецификацию METEOR", type=["xlsx", "xls"], label_visibility="collapsed")
@@ -412,91 +433,85 @@ with col3:
         Поддержка: mt@laggartt.ru
         """)
 
-# Основной контейнер с двумя колонками
-left_col, right_col = st.columns([1, 1])
+# Основной контейнер
+st.markdown("### Вид подключения")
+conn_options = ["VK-правое", "VK-левое", "K-боковое"]
+st.session_state.connection = st.radio("", conn_options, index=conn_options.index(st.session_state.connection), horizontal=True)
 
-# Левая колонка: управление и матрица
-with left_col:
-    st.markdown("### Вид подключения")
-    conn_options = ["VK-правое", "VK-левое", "K-боковое"]
-    st.session_state.connection = st.radio("", conn_options, index=conn_options.index(st.session_state.connection), horizontal=True)
+st.markdown("### Тип радиатора")
+rad_types = ["10", "11", "30", "33"] if st.session_state.connection == "VK-левое" else ["10", "11", "20", "21", "22", "30", "33"]
+st.session_state.radiator_type = st.radio("", rad_types, index=rad_types.index(st.session_state.radiator_type), horizontal=True)
 
-    st.markdown("### Тип радиатора")
-    rad_types = ["10", "11", "30", "33"] if st.session_state.connection == "VK-левое" else ["10", "11", "20", "21", "22", "30", "33"]
-    st.session_state.radiator_type = st.radio("", rad_types, index=rad_types.index(st.session_state.radiator_type), horizontal=True)
+# Матрица
+st.markdown("#### длина радиаторов, мм")
+sheet_name = f"{st.session_state.connection} {st.session_state.radiator_type}"
+if sheet_name not in sheets:
+    st.error(f"Лист '{sheet_name}' не найден")
+else:
+    df = sheets[sheet_name]
+    lengths = list(range(400, 2100, 100))
+    heights = [300, 400, 500, 600, 900]
 
-    # Матрица
-    st.markdown("#### длина радиаторов, мм")
-    sheet_name = f"{st.session_state.connection} {st.session_state.radiator_type}"
-    if sheet_name not in sheets:
-        st.error(f"Лист '{sheet_name}' не найден")
-    else:
-        df = sheets[sheet_name]
-        lengths = list(range(400, 2100, 100))
-        heights = [300, 400, 500, 600, 900]
+    # Заголовки столбцов
+    cols = st.columns(len(heights)+1)
+    cols[0].markdown("<div class='matrix-header'>высота<br>радиаторов, мм</div>", unsafe_allow_html=True)
+    for j, h in enumerate(heights):
+        cols[j+1].markdown(f"<div class='matrix-header'>{h}</div>", unsafe_allow_html=True)
 
-        # Заголовки столбцов
+    has_any = any(st.session_state.entry_values.values())
+    for i, l in enumerate(lengths):
         cols = st.columns(len(heights)+1)
-        cols[0].markdown("<div class='matrix-header'>высота<br>радиаторов, мм</div>", unsafe_allow_html=True)
+        cols[0].markdown(f"<div class='matrix-header'>{l}</div>", unsafe_allow_html=True)
         for j, h in enumerate(heights):
-            cols[j+1].markdown(f"<div class='matrix-header'>{h}</div>", unsafe_allow_html=True)
+            pattern = f"/{h}/{l}"
+            match = df[df['Наименование'].str.contains(pattern, na=False)]
+            if not match.empty:
+                product = match.iloc[0]
+                art = str(product['Артикул'])
+                key = (sheet_name, art)
+                current_val = st.session_state.entry_values.get(key, "")
+                bg_class = "matrix-cell-filled" if current_val else ("matrix-cell" if has_any else "")
+                with cols[j+1]:
+                    new_val = st.text_input("", value=current_val, key=f"cell_{sheet_name}_{art}", label_visibility="collapsed")
+                    st.session_state.entry_values[key] = new_val
+                    if st.session_state.show_tooltips and new_val:
+                        st.caption(f"Артикул: {art}")
 
-        has_any = any(st.session_state.entry_values.values())
-        for i, l in enumerate(lengths):
-            cols = st.columns(len(heights)+1)
-            cols[0].markdown(f"<div class='matrix-header'>{l}</div>", unsafe_allow_html=True)
-            for j, h in enumerate(heights):
-                pattern = f"/{h}/{l}"
-                match = df[df['Наименование'].str.contains(pattern, na=False)]
-                if not match.empty:
-                    product = match.iloc[0]
-                    art = str(product['Артикул'])
-                    key = (sheet_name, art)
-                    current_val = st.session_state.entry_values.get(key, "")
-                    bg_class = "matrix-cell-filled" if current_val else ("matrix-cell" if has_any else "")
-                    with cols[j+1]:
-                        new_val = st.text_input("", value=current_val, key=f"cell_{sheet_name}_{art}", label_visibility="collapsed")
-                        st.session_state.entry_values[key] = new_val
-                        if st.session_state.show_tooltips and new_val:
-                            st.caption(f"Артикул: {art}")
+# Нижняя панель
+col1, col2, col3 = st.columns([2, 3, 2])
+with col1:
+    st.session_state.bracket_type = st.radio("Крепление", ["Настенные кронштейны", "Напольные кронштейны", "Без кронштейнов"], index=["Настенные кронштейны", "Напольные кронштейны", "Без кронштейнов"].index(st.session_state.bracket_type))
+with col2:
+    st.checkbox("Показывать параметры", value=st.session_state.show_tooltips, key="show_tooltips")
+with col3:
+    rad_disc = st.number_input("Скидка на радиаторы, %", min_value=0.0, max_value=100.0, value=st.session_state.radiator_discount, step=1.0, key="radiator_discount")
+    br_disc = st.number_input("Скидка на кронштейны, %", min_value=0.0, max_value=100.0, value=st.session_state.bracket_discount, step=1.0, key="bracket_discount")
 
-    # Нижняя панель
-    col1, col2, col3 = st.columns([2, 3, 2])
-    with col1:
-        st.session_state.bracket_type = st.radio("Крепление", ["Настенные кронштейны", "Напольные кронштейны", "Без кронштейнов"], index=["Настенные кронштейны", "Напольные кронштейны", "Без кронштейнов"].index(st.session_state.bracket_type))
-    with col2:
-        st.checkbox("Показывать параметры", value=st.session_state.show_tooltips, key="show_tooltips")
-        st.link_button("Проверить обновление", "https://b24.engpx.ru/~HinAV")
-    with col3:
-        rad_disc = st.number_input("Скидка на радиаторы, %", min_value=0.0, max_value=100.0, value=st.session_state.radiator_discount, step=1.0, key="radiator_discount")
-        br_disc = st.number_input("Скидка на кронштейны, %", min_value=0.0, max_value=100.0, value=st.session_state.bracket_discount, step=1.0, key="bracket_discount")
+# Кнопки
+col1, col2, col3 = st.columns([1, 4, 1])
+with col1:
+    if st.button("Предпросмотр"):
+        df = prepare_spec_data()
+        if not df.empty:
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.warning("Нет данных")
+with col3:
+    if st.button("Сброс"):
+        st.session_state.entry_values = {}
+        st.rerun()
 
-    # Кнопки
-    col1, col2, col3 = st.columns([1, 4, 1])
-    with col1:
-        if st.button("Предпросмотр"):
-            df = prepare_spec_data()
-            if not df.empty:
-                st.dataframe(df, use_container_width=True)
-            else:
-                st.warning("Нет данных")
-    with col3:
-        if st.button("Сброс"):
-            st.session_state.entry_values = {}
-            st.rerun()
-
-# Правая колонка: спецификация
-with right_col:
-    st.markdown("### Спецификация")
-    df = prepare_spec_data()
-    if df.empty:
-        st.info("Заполните матрицу слева, чтобы сгенерировать спецификацию.")
-    else:
-        st.dataframe(df, use_container_width=True)
-        total_sum = df["Сумма, руб (с НДС)"].sum()
-        total_power = 0.0
-        for _, row in df.iterrows():
-            if "Кронштейн" not in str(row["Наименование"]):
-                total_power += float(row["Мощность, Вт"]) * int(row["Кол-во"])
-        st.markdown(f"**Суммарная мощность:** {total_power:.2f} Вт")
-        st.markdown(f"**Сумма спецификации:** {total_sum:.2f} руб")
+# Спецификация под кнопкой Предпросмотр
+st.markdown("### Спецификация")
+df = prepare_spec_data()
+if df.empty:
+    st.info("Заполните матрицу, чтобы сгенерировать спецификацию.")
+else:
+    st.dataframe(df, use_container_width=True)
+    total_sum = df["Сумма, руб (с НДС)"].sum()
+    total_power = 0.0
+    for _, row in df.iterrows():
+        if "Кронштейн" not in str(row["Наименование"]):
+            total_power += float(row["Мощность, Вт"]) * int(row["Кол-во"])
+    st.markdown(f"**Суммарная мощность:** {total_power:.2f} Вт")
+    st.markdown(f"**Сумма спецификации:** {total_sum:.2f} руб")
