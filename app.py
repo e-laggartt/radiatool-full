@@ -7,7 +7,7 @@ from pathlib import Path
 
 # === Настройка внешнего вида ===
 st.set_page_config(
-    page_title="RadiaTool v2.0",
+    page_title="RadiaTool v1.9",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -43,8 +43,9 @@ st.markdown("""
     }
     div[data-testid="stHorizontalBlock"] > div {
         background-color: #dedede !important;
-        padding: 5px !important;
-        border-radius: 4px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
     }
     .matrix-cell {
         text-align: center;
@@ -52,10 +53,10 @@ st.markdown("""
         border: 1px solid #ccc;
         padding: 0 !important;
         margin: 0 !important;
-        height: 28px;
-        width: 60px;
+        height: 24px;
+        width: 55px;
         font-family: "Segoe UI", sans-serif;
-        font-size: 12px;
+        font-size: 10px;
     }
     .matrix-cell-filled {
         background-color: #fff2cc !important;
@@ -65,18 +66,22 @@ st.markdown("""
         text-align: center;
         padding: 0 !important;
         margin: 0 !important;
-        height: 28px;
-        width: 60px;
+        height: 24px;
+        width: 55px;
         font-family: "Segoe UI", sans-serif;
-        font-size: 12px;
+        font-size: 10px;
     }
     .stNumberInput input {
         padding: 0 !important;
         margin: 0 !important;
-        height: 28px;
-        width: 60px;
+        height: 24px;
+        width: 55px;
         font-family: "Segoe UI", sans-serif;
-        font-size: 12px;
+        font-size: 10px;
+    }
+    .stFileUploader {
+        padding: 0 !important;
+        margin: 0 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -372,7 +377,7 @@ def save_excel_spec(df, correspondence_df=None):
     return output.getvalue()
 
 # === Интерфейс ===
-st.title("RadiaTool v2.0")
+st.title("RadiaTool v1.9")
 
 # Верхнее меню (упрощённое)
 col1, col2, col3 = st.columns([2, 3, 1])
@@ -385,13 +390,24 @@ with col1:
             excel_data = save_excel_spec(df)
             st.download_button("📥 Скачать Excel", excel_data, "Расчёт стоимости.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 with col2:
-    uploaded_file = st.file_uploader("Загрузить спецификацию", type=["xlsx", "csv"], label_visibility="collapsed")
-    if uploaded_file:
-        st.success("Файл загружен (импорт в разработке)")
+    # Заменяем drag-and-drop на выпадающее меню "Загрузить из"
+    upload_option = st.selectbox("", ["Выберите действие", "Загрузить спецификацию METEOR", "Загрузить CSV", "Загрузить иной спецификации"], index=0)
+    if upload_option == "Загрузить спецификацию METEOR":
+        uploaded_file = st.file_uploader("Загрузить спецификацию METEOR", type=["xlsx", "xls"], label_visibility="collapsed")
+        if uploaded_file:
+            st.success("Файл загружен (импорт в разработке)")
+    elif upload_option == "Загрузить CSV":
+        uploaded_file = st.file_uploader("Загрузить CSV", type=["csv"], label_visibility="collapsed")
+        if uploaded_file:
+            st.success("Файл загружен (импорт в разработке)")
+    elif upload_option == "Загрузить иной спецификации":
+        uploaded_file = st.file_uploader("Загрузить иной спецификации", type=["xlsx", "xls", "csv"], label_visibility="collapsed")
+        if uploaded_file:
+            st.success("Файл загружен (импорт в разработке)")
 with col3:
     if st.button("Информация"):
         st.info("""
-        **RadiaTool v2.0**  
+        **RadiaTool v1.9**  
         Программа для подбора радиаторов METEOR.  
         Поддержка: mt@laggartt.ru
         """)
