@@ -7,7 +7,7 @@ from pathlib import Path
 
 # === Настройка внешнего вида ===
 st.set_page_config(
-    page_title="RadiaTool v1.9",
+    page_title="RadiaTool v2.0",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
