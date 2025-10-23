@@ -372,7 +372,7 @@ def save_excel_spec(df, correspondence_df=None):
     return output.getvalue()
 
 # === Интерфейс ===
-st.title("RadiaTool v1.9")
+st.title("RadiaTool v2.0")
 
 # Верхнее меню (упрощённое)
 col1, col2, col3 = st.columns([2, 3, 1])
@@ -391,7 +391,7 @@ with col2:
 with col3:
     if st.button("Информация"):
         st.info("""
-        **RadiaTool v1.9**  
+        **RadiaTool v2.0**  
         Программа для подбора радиаторов METEOR.  
         Поддержка: mt@laggartt.ru
         """)
